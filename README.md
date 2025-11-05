@@ -1,3 +1,9 @@
+# Foreword
+
+This is a unofficial clone of the kali live build scripts from: https://gitlab.com/kalilinux/build-scripts/live-build-config.git that has all of the custom tools as metapackages automatically installed. As well as have alterations for getting secure boot and nvidia drivers working in the live environment.
+
+Since this isn't yet officially supported by the kali team. Use at your own risk!
+
 # Kali-Live Build-Scripts
 
 _`live-build` configuration for Kali ISO images._

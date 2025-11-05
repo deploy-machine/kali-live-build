@@ -1,0 +1,7 @@
+nvidia-driver
+nvidia-cuda-toolkit
+linux-headers-amd64
+dkms
+firmware-misc-nonfree
+nvidia-opencl-icd
+ocl-icd-libopencl1

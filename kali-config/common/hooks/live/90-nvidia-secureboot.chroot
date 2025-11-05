@@ -1,0 +1,36 @@
+#!/bin/bash
+set -e
+
+# 1. Ensure non-free repos are enabled (if not already)
+# (depends on your chroot config – maybe not needed here)
+
+# 2. Blacklist nouveau
+echo "blacklist nouveau" > /etc/modprobe.d/blacklist-nouveau.conf
+update-initramfs -u
+
+# 3. Create a Machine Owner Key (MOK) for module signing (if not pre-generated)
+# You might pre-generate this outside the chroot and include; here we assume inside
+openssl req -new -x509 -newkey rsa:2048 -keyout /root/MOK.priv \
+        -outform DER -out /root/MOK.der -nodes -days 3650 \
+        -subj "/CN=Live-ISO MOK for module signing/"
+
+# 4. Sign the NVIDIA kernel modules
+# Find location of modules (example)
+for mod in /lib/modules/$(uname -r)/updates/dkms/nvidia*.ko; do
+  echo "Signing module $mod"
+  /usr/src/linux-headers-$(uname -r)/scripts/sign-file sha512 \
+      /root/MOK.priv /root/MOK.der "$mod"
+done
+
+# 5. Enroll the public part of the key into MOK so kernel will trust it
+# Installing mokutil and shim-signed might be needed
+apt-get install -y --no-install-recommends mokutil shim-signed
+mokutil --import /root/MOK.der --password "YourMokPass"
+
+# 6. Optionally sign the kernel itself (if needed)
+sbsign --key /root/MOK.priv --cert <convert DER->PEM if needed> \
+       --output /boot/vmlinuz-$(uname -r).signed /boot/vmlinuz-$(uname -r)
+mv /boot/vmlinuz-$(uname -r).signed /boot/vmlinuz-$(uname -r)
+
+# 7. Clean up if you like
+
