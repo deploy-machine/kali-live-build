@@ -103,7 +103,7 @@ After=network.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/mokutil --import /etc/secureboot/MOK.der --password "YourMokPass"
+ExecStart=/usr/bin/mokutil --import /etc/secureboot/MOK.der --password "kali"
 RemainAfterExit=yes
 
 [Install]
