@@ -4,6 +4,8 @@ This is a unofficial clone of the kali live build scripts from: https://gitlab.c
 
 Since this isn't yet officially supported by the kali team. Use at your own risk!
 
+I'm putting this here for my personal use.
+
 # Kali-Live Build-Scripts
 
 _`live-build` configuration for Kali ISO images._
