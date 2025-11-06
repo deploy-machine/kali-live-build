@@ -123,40 +123,33 @@ if [ -n "$enable_pu" ]; then
     > config/archives/kali-proposed-updates.list.binary
 fi
 
-# Always include non-free + firmware repos
-lb_opts="$lb_opts --archive-areas 'main contrib non-free non-free-firmware'"
-
-# Enable firmware in both chroot and binary
-lb_opts="$lb_opts --firmware-binary true --firmware-chroot true"
-
-# Set ISO metadata
-lb_opts="$lb_opts \
-	--iso-application 'Kali SecureBoot Live' \
-	--iso-publisher 'Kali Custom Build' \
-	--iso-volume 'KaliLive-SecureBoot'"
-
-# Ensure hybrid ISO with UEFI + BIOS support
-lb_opts="$lb_opts --binary-images iso-hybrid"
-
-# Enable Secure Boot-compatible boot options
-lb_opts="$lb_opts --bootappend-live 'boot=live components quiet splash nouveau.modeset=0 nvidia-drm.modeset=1'"
-
-# Disable unnessecary extras
-lb_opts="$lb_opts --debian-installer false --updates false --backports false --source false"
-
 lb config noauto \
   --apt-indices=false \
   --distribution "$dist" \
   --debian-installer-distribution "$dist" \
+  --archive-areas "main contrib non-free non-free-firmware" \
   --debootstrap-options "--keyring=/usr/share/keyrings/kali-archive-keyring.gpg" \
   --keyring-packages kali-archive-keyring \
+  --updates false \
+  --backports false \
+  --source false \
+  --firmware-binary true \
+  --firmware-chroot true \
   --mirror-bootstrap "$kali_mirror" \
   --mirror-debian-installer "$kali_mirror" \
   --mirror-binary "$public_kali_mirror" \
+  --iso-application "Kali SecureBoot Linux" \
+  --iso-publisher "Kali Custom Build" \
+  --iso-volume "Kali Live" \
   --linux-packages linux-image \
   --memtest memtest86+ \
+  --bootappend-live "boot=live components quiet splash nouveau.modeset=0 nvidia-drm.modeset=1" \
+  --bootappend-live-failsafe "boot=live components noeject memtest noapic noapm nodma nomce nolapic nomodeset nosmp nosplash vga=normal" \
   --bootappend-install "net.ifnames=0" \
   --security false \
+  --firmware-binary true \
+  --firmware-chroot true \
+  --bootloaders grub-efi \
   --win32-loader false \
   $lb_opts \
   "$@"

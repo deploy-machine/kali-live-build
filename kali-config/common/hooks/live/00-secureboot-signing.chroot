@@ -1,0 +1,117 @@
+#!/bin/bash
+set -e
+
+echo "[+] Setting up unified Secure Boot signing system with auto MOK enrollment"
+
+SECUREBOOT_DIR="/etc/secureboot"
+mkdir -p "$SECUREBOOT_DIR"
+
+# 1️⃣ Generate single MOK key (RSA 2048, 10 years)
+openssl req -new -x509 -newkey rsa:2048 \
+    -keyout "$SECUREBOOT_DIR/MOK.priv" \
+    -outform DER \
+    -out "$SECUREBOOT_DIR/MOK.der" \
+    -nodes -days 3650 \
+    -subj "/CN=Live-ISO MOK for module signing/"
+openssl x509 -in "$SECUREBOOT_DIR/MOK.der" -inform DER -out "$SECUREBOOT_DIR/MOK.pem"
+
+chmod 600 "$SECUREBOOT_DIR/MOK.priv"
+chmod 644 "$SECUREBOOT_DIR/MOK.der" "$SECUREBOOT_DIR/MOK.pem"
+
+# 2️⃣ Install required packages
+apt-get install -y --no-install-recommends mokutil shim-signed sbsigntool
+
+# 3️⃣ Blacklist nouveau
+echo "blacklist nouveau" > /etc/modprobe.d/blacklist-nouveau.conf
+update-initramfs -u
+
+# 4️⃣ Sign all existing kernel modules (including NVIDIA DKMS modules)
+KVER=$(uname -r)
+echo "[+] Signing existing kernel modules for kernel $KVER"
+for mod in /lib/modules/$KVER/**/*.ko; do
+    [ -f "$mod" ] && /usr/src/linux-headers-$KVER/scripts/sign-file sha512 \
+        "$SECUREBOOT_DIR/MOK.priv" "$SECUREBOOT_DIR/MOK.der" "$mod"
+done
+
+# DKMS modules
+if [ -d /var/lib/dkms ]; then
+    find /var/lib/dkms -type f -name '*.ko' | while read -r mod; do
+        /usr/src/linux-headers-$KVER/scripts/sign-file sha512 "$SECUREBOOT_DIR/MOK.priv" "$SECUREBOOT_DIR/MOK.der" "$mod"
+    done
+fi
+
+# 5️⃣ Kernel postinst hook for automatic signing of future updates
+cat << 'EOF' > /etc/kernel/postinst.d/secureboot-sign
+#!/bin/bash
+set -e
+KVER="$1"
+MOK_PRIV="/etc/secureboot/MOK.priv"
+MOK_DER="/etc/secureboot/MOK.der"
+
+[ ! -f "$MOK_PRIV" ] && exit 0
+
+echo "[+] Auto-signing kernel modules for $KVER"
+find /lib/modules/$KVER -type f -name '*.ko' | while read -r mod; do
+    /usr/src/linux-headers-$KVER/scripts/sign-file sha512 "$MOK_PRIV" "$MOK_DER" "$mod"
+done
+
+# DKMS modules
+if [ -d /var/lib/dkms ]; then
+    find /var/lib/dkms -type f -name '*.ko' | while read -r mod; do
+        /usr/src/linux-headers-$KVER/scripts/sign-file sha512 "$MOK_PRIV" "$MOK_DER" "$mod"
+    done
+fi
+EOF
+chmod +x /etc/kernel/postinst.d/secureboot-sign
+
+# 6️⃣ GRUB & shim signing
+cat << 'EOF' > /etc/secureboot/sign-grub.sh
+#!/bin/bash
+set -e
+MOK_PRIV="/etc/secureboot/MOK.priv"
+MOK_PEM="/etc/secureboot/MOK.pem"
+[ ! -f "$MOK_PRIV" ] || [ ! -f "$MOK_PEM" ] || exit 0
+
+echo "[+] Signing GRUB EFI binaries"
+EFI_PATHS=(
+    "/boot/efi/EFI/debian/grubx64.efi"
+    "/boot/efi/EFI/kali/grubx64.efi"
+    "/usr/lib/grub/x86_64-efi-signed/grubx64.efi"
+    "/usr/lib/grub/x86_64-efi/grubx64.efi"
+)
+for grub_bin in "${EFI_PATHS[@]}"; do
+    [ -f "$grub_bin" ] || continue
+    sbsign --key "$MOK_PRIV" --cert "$MOK_PEM" --output "${grub_bin}.signed" "$grub_bin"
+    mv "${grub_bin}.signed" "$grub_bin"
+done
+
+# Optional: re-sign shim
+[ -f "/usr/lib/shim/shimx64.efi" ] && \
+    sbsign --key "$MOK_PRIV" --cert "$MOK_PEM" --output /usr/lib/shim/shimx64.efi.signed /usr/lib/shim/shimx64.efi && \
+    mv /usr/lib/shim/shimx64.efi.signed /usr/lib/shim/shimx64.efi
+
+echo "[+] GRUB/shim signing complete"
+EOF
+chmod +x /etc/secureboot/sign-grub.sh
+/etc/secureboot/sign-grub.sh
+
+# 7️⃣ Auto-enroll MOK at first boot using systemd service
+cat << 'EOF' > /etc/systemd/system/auto-mok-enroll.service
+[Unit]
+Description=Enroll Live ISO MOK key for Secure Boot
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/mokutil --import /etc/secureboot/MOK.der --password "YourMokPass"
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Enable the service
+systemctl enable auto-mok-enroll.service
+
+echo "[+] Live-build Secure Boot hook complete: MOK auto-enrollment, kernel/NVIDIA signing, GRUB signed, future updates auto-signed."
+
